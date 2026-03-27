@@ -1,0 +1,15 @@
+# 数字水印平台 - Python后端依赖
+
+# Web框架
+fastapi>=0.110.0
+uvicorn>=0.27.0
+
+# 图像处理
+opencv-python>=4.9.0
+numpy>=1.26.0
+pillow>=10.2.0
+scipy>=1.12.0
+PyWavelets>=1.5.0
+
+# 文件上传
+python-multipart>=0.0.9
