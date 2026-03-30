@@ -183,16 +183,149 @@ class _ImageWatermarkScreenState extends State<ImageWatermarkScreen>
 
       _animationController.forward(from: 0);
 
-      if (result['isKnown'] == true) {
-        _showSnackBar('水印嵌入成功！(图片已有历史记录)');
-      } else {
-        _showSnackBar('水印嵌入成功！');
-      }
+      // 显示详细弹窗
+      _showEmbedResultDialog(result);
     } catch (e) {
       _showSnackBar('嵌入失败: $e');
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  void _showEmbedResultDialog(Map<String, dynamic> result) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isKnown = result['isKnown'] == true;
+    final previousInfo = result['previousInfo'] as Map<String, dynamic>?;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              Icons.check_circle,
+              color: Colors.green,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            const Text('水印嵌入成功'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 算法信息
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.auto_awesome, size: 16, color: colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text('算法: ${result['algorithm'] ?? _selectedAlgorithm}',
+                          style: const TextStyle(fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.tune, size: 16, color: colorScheme.secondary),
+                      const SizedBox(width: 8),
+                      Text('强度: ${result['strength'] ?? _strength.toStringAsFixed(2)}',
+                          style: const TextStyle(fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.fingerprint, size: 16, color: colorScheme.tertiary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('哈希: ${result['imageHash'] ?? ''}',
+                            style: const TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // 历史记录提示
+            if (isKnown && previousInfo != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.history, color: Colors.orange, size: 20),
+                        const SizedBox(width: 8),
+                        const Text('图片历史记录',
+                            style: TextStyle(fontWeight: FontWeight.w600, color: Colors.orange)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text('首次记录: ${previousInfo['first_seen'] ?? '未知'}',
+                        style: const TextStyle(fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Text('已嵌入水印次数: ${previousInfo['watermark_count'] ?? 0}',
+                        style: const TextStyle(fontSize: 12)),
+                    const SizedBox(height: 8),
+                    const Text('此图片已在系统中记录，可追溯水印历史。',
+                        style: TextStyle(fontSize: 11, color: Colors.orange)),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.new_releases, color: Colors.green, size: 20),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text('新图片记录已创建',
+                          style: TextStyle(color: Colors.green)),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _saveImage();
+            },
+            child: const Text('保存图片'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _extractWatermark() async {
@@ -208,7 +341,7 @@ class _ImageWatermarkScreenState extends State<ImageWatermarkScreen>
         _selectedImageBytes!,
         _selectedFileName ?? 'image.png',
         algorithm: _selectedAlgorithm,
-        strength: _selectedAlgorithm == 'QIM' ? _strength : null,
+        strength: _selectedAlgorithm == 'QIM' || _selectedAlgorithm == 'DWT-SVD' ? _strength : null,
       );
 
       setState(() {
@@ -218,16 +351,214 @@ class _ImageWatermarkScreenState extends State<ImageWatermarkScreen>
 
       _animationController.forward(from: 0);
 
-      if (result['success']) {
-        _showSnackBar('水印提取成功！');
-      } else {
-        _showSnackBar(result['message'] ?? '未检测到水印');
-      }
+      // 显示提取结果弹窗
+      _showExtractResultDialog(result);
     } catch (e) {
       _showSnackBar('提取失败: $e');
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  void _showExtractResultDialog(Map<String, dynamic> result) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final success = result['success'] == true;
+    final isWatermarked = result['is_watermarked'] == true;
+    final recordInfo = result['record_info'] as Map<String, dynamic>?;
+    final confidence = result['confidence'] as double? ?? 0.0;
+    final detection = result['detection'] as Map<String, dynamic>?;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              success ? Icons.verified : Icons.warning_amber,
+              color: success ? Colors.green : Colors.orange,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Text(success ? '水印提取成功' : '提取结果'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 水印内容
+              if (success && result['watermark'] != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('水印内容:',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      SelectableText(
+                        result['watermark'],
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(result['message'] ?? '未检测到水印'),
+                ),
+              const SizedBox(height: 12),
+              // 置信度信息
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.analytics, color: Colors.blue, size: 20),
+                        const SizedBox(width: 8),
+                        const Text('盲检测分析',
+                            style: TextStyle(fontWeight: FontWeight.w600, color: Colors.blue)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text('当前算法($_selectedAlgorithm)置信度: ',
+                            style: const TextStyle(fontSize: 12)),
+                        Text('${(confidence * 100).toStringAsFixed(1)}%',
+                            style: TextStyle(fontWeight: FontWeight.bold,
+                              color: confidence > 0.5 ? Colors.green : Colors.orange)),
+                      ],
+                    ),
+                    if (detection != null && detection['best_match'] != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text('最佳匹配算法: ${detection['best_match']}',
+                              style: const TextStyle(fontSize: 12)),
+                          Text(' (${((detection['best_confidence'] as num? ?? 0) * 100).toStringAsFixed(1)}%)',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                    if (!success && confidence > 0.3)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text('提示: 检测到可能的水印特征，建议尝试其他算法',
+                            style: TextStyle(fontSize: 11, color: Colors.blue[700])),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // 图片信息
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.fingerprint, size: 16, color: colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Text('图片哈希: ${result['image_hash'] ?? ''}',
+                            style: const TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.auto_awesome, size: 16, color: colorScheme.secondary),
+                        const SizedBox(width: 8),
+                        Text('使用算法: ${result['algorithm'] ?? _selectedAlgorithm}',
+                            style: const TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // 历史记录
+              if (isWatermarked && recordInfo != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.history, color: Colors.purple, size: 20),
+                          const SizedBox(width: 8),
+                          const Text('水印记录',
+                              style: TextStyle(fontWeight: FontWeight.w600, color: Colors.purple)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (recordInfo['watermark'] != null)
+                        Text('水印内容: ${recordInfo['watermark']}',
+                            style: const TextStyle(fontSize: 12)),
+                      if (recordInfo['algorithm'] != null)
+                        Text('嵌入算法: ${recordInfo['algorithm']}',
+                            style: const TextStyle(fontSize: 12)),
+                      if (recordInfo['created'] != null)
+                        Text('嵌入时间: ${recordInfo['created']}',
+                            style: const TextStyle(fontSize: 12)),
+                      if (recordInfo['strength'] != null)
+                        Text('嵌入强度: ${recordInfo['strength']}',
+                            style: const TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          if (success && result['watermark'] != null)
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: result['watermark']));
+                Navigator.pop(context);
+                _showSnackBar('已复制到剪贴板');
+              },
+              child: const Text('复制水印'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _saveImage() async {

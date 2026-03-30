@@ -11,7 +11,7 @@ SS: 扩频水印 (类似通信扩频，安全性高)
 import cv2
 import numpy as np
 import hashlib
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
 import pywt
 from scipy.fftpack import dct, idct
 from scipy.linalg import svd
@@ -39,6 +39,380 @@ class ImageWatermarkService:
         'QIM': {'min': 15, 'max': 60, 'step': 5, 'label': '量化步长'},
         'SS': {'min': 5, 'max': 30, 'step': 5, 'label': '扩频强度'}
     }
+
+    # ==================== 盲水印检测 ====================
+    def _detect_watermark_presence(self, img: np.ndarray, algorithm: str) -> Dict:
+        """
+        盲水印检测 - 检测图像中是否存在水印特征
+        返回置信度和检测信息
+        """
+        results = {}
+
+        # 转换为Y通道
+        if len(img.shape) == 3:
+            yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV).astype(np.float64)
+            y = yuv[:, :, 0]
+        else:
+            y = img.astype(np.float64)
+
+        # 1. LSB特征检测 - 分析最低位的随机性
+        lsb_confidence = self._detect_lsb_pattern(img)
+        results['LSB'] = lsb_confidence
+
+        # 2. DCT特征检测 - 检测中频系数的异常模式
+        dct_confidence = self._detect_dct_pattern(y)
+        results['DCT'] = dct_confidence
+
+        # 3. DWT特征检测 - 检测小波系数的差分模式
+        dwt_confidence = self._detect_dwt_pattern(y)
+        results['DWT'] = dwt_confidence
+
+        # 4. DWT-SVD特征检测
+        dwt_svd_confidence = self._detect_dwt_svd_pattern(y)
+        results['DWT-SVD'] = dwt_svd_confidence
+
+        # 5. QIM特征检测
+        qim_confidence = self._detect_qim_pattern(y)
+        results['QIM'] = qim_confidence
+
+        # 6. SS特征检测
+        ss_confidence = self._detect_ss_pattern(y)
+        results['SS'] = ss_confidence
+
+        # 综合判断
+        max_confidence = max(results.values())
+        best_algo = max(results, key=results.get)
+
+        return {
+            'confidence': results.get(algorithm, 0),
+            'all_confidence': results,
+            'best_match': best_algo,
+            'best_confidence': max_confidence,
+            'has_watermark': max_confidence > 0.3
+        }
+
+    def _detect_lsb_pattern(self, img: np.ndarray) -> float:
+        """检测LSB水印特征 - 分析最低位的模式和熵"""
+        if len(img.shape) == 3:
+            flat = img[:, :, 0].flatten()  # 使用单个通道
+        else:
+            flat = img.flatten()
+
+        # 提取最低位
+        lsb = flat & 1
+
+        # 计算熵值 - 水印数据通常有较高的熵
+        ones = np.sum(lsb)
+        total = len(lsb)
+
+        if total == 0:
+            return 0
+
+        p1 = ones / total
+        p0 = 1 - p1
+
+        # 熵值计算 - 完全随机时为1，完全一致时为0
+        if p1 == 0 or p0 == 0:
+            entropy = 0
+        else:
+            entropy = -p1 * np.log2(p1) - p0 * np.log2(p0)
+
+        # 检测前16位是否像有效的长度头
+        header_bits = lsb[:16]
+        try:
+            length = int(''.join(map(str, header_bits)), 2)
+            valid_header = 1 <= length <= 500  # 合理的水印长度范围
+        except:
+            valid_header = False
+
+        # 检测后续数据是否像有效的UTF-8编码
+        valid_utf8 = False
+        if valid_header and length > 0:
+            try:
+                data_bits = lsb[16:16 + length * 8]
+                if len(data_bits) >= length * 8:
+                    data = bytearray()
+                    for i in range(0, length * 8, 8):
+                        data.append(int(''.join(map(str, data_bits[i:i+8])), 2))
+                    data.decode('utf-8')
+                    valid_utf8 = True
+            except:
+                valid_utf8 = False
+
+        # 置信度计算
+        # 随机噪声图像的熵接近1，但没有有效的数据结构
+        # 水印图像有适中的熵且有有效的数据结构
+        if valid_utf8:
+            confidence = min(1.0, entropy * 0.5 + 0.5)  # 有效UTF-8，高置信度
+        elif valid_header:
+            confidence = min(1.0, entropy * 0.3 + 0.3)  # 有效长度头，中等置信度
+        else:
+            confidence = entropy * 0.2  # 仅熵值，低置信度
+
+        return round(confidence, 3)
+
+    def _detect_dct_pattern(self, y: np.ndarray) -> float:
+        """检测DCT域水印特征 - 分析中频系数差分模式"""
+        h, w = y.shape
+        if h < 16 or w < 16:
+            return 0
+
+        # DCT变换
+        dct_y = dct(dct(y.T, norm='ortho').T, norm='ortho')
+
+        # 分析中频区域
+        start_h, end_h = h // 4, h // 2
+        start_w, end_w = w // 4, w // 2
+
+        mid_freq = dct_y[start_h:end_h, start_w:end_w]
+        flat = mid_freq.flatten()
+
+        if len(flat) < 100:
+            return 0
+
+        # 检测相邻系数的差分模式
+        diffs = []
+        for i in range(0, len(flat) - 1, 2):
+            diff = abs(flat[i] - flat[i + 1])
+            diffs.append(diff)
+
+        if len(diffs) == 0:
+            return 0
+
+        diffs = np.array(diffs)
+
+        # 计算差分的统计特性
+        mean_diff = np.mean(diffs)
+        std_diff = np.std(diffs)
+
+        # 检测是否有明显的量化模式
+        # 水印嵌入会导致差分值呈现规律性
+        # 检查差分是否集中在某些特定值附近
+        hist, bins = np.histogram(diffs, bins=20)
+        hist_norm = hist / len(diffs)
+        max_peak = np.max(hist_norm)
+
+        # 计算差分的一致性 - 水印图像的差分更一致
+        # 使用变异系数
+        cv = std_diff / (mean_diff + 1e-10)
+
+        # 检测特定位置的系数关系模式（水印嵌入特征）
+        # 水印通常在特定系数对之间嵌入
+        block_size = 8
+        votes_pattern = 0
+        total_blocks = 0
+
+        for i in range(0, min(h - 8, 64), block_size):
+            for j in range(0, min(w - 8, 64), block_size):
+                block = dct_y[i:i+8, j:j+8]
+                # 检查(1,1)和(2,2)系数的关系
+                if abs(block[1, 1]) > 0.1 and abs(block[2, 2]) > 0.1:
+                    if block[1, 1] > block[2, 2]:
+                        votes_pattern += 1
+                    total_blocks += 1
+
+        if total_blocks > 0:
+            pattern_ratio = votes_pattern / total_blocks
+            # 水印图像的pattern_ratio应该接近0.5或极端值
+            pattern_score = abs(pattern_ratio - 0.5) * 2
+        else:
+            pattern_score = 0
+
+        # 置信度计算：综合考虑多个因素
+        # 低变异系数、高峰值、高模式分数表示有水印
+        confidence = min(1.0, max_peak * 1.5 + (1 - cv) * 0.2 + pattern_score * 0.3)
+
+        # 对随机图像降低置信度
+        if max_peak < 0.15 and cv > 1.0:
+            confidence = min(confidence, 0.3)
+
+        return round(confidence, 3)
+
+    def _detect_dwt_pattern(self, y: np.ndarray) -> float:
+        """检测DWT域水印特征 - 分析小波系数"""
+        h, w = y.shape
+        if h < 32 or w < 32:
+            return 0
+
+        try:
+            # 小波分解
+            coeffs = pywt.wavedec2(y, 'haar', level=2)
+            LH = coeffs[2][1]  # 中频水平细节
+
+            flat = LH.flatten()
+            if len(flat) < 100:
+                return 0
+
+            # 检测相邻系数对的模式
+            diffs = []
+            signs = []
+            for i in range(0, len(flat) - 1, 2):
+                diff = flat[i] - flat[i + 1]
+                diffs.append(abs(diff))
+                signs.append(1 if diff > 0 else 0)
+
+            diffs = np.array(diffs)
+            signs = np.array(signs)
+
+            # 分析差分值的分布
+            mean_diff = np.mean(diffs)
+            std_diff = np.std(diffs)
+
+            # 分析符号的一致性
+            # 随机图像符号应该接近0.5
+            sign_ratio = np.mean(signs)
+            sign_consistency = abs(sign_ratio - 0.5) * 2  # 越接近1越有水印特征
+
+            # 检测差分值是否有规律的间隔（水印嵌入特征）
+            # 水印会导致差分值集中
+            hist, _ = np.histogram(diffs, bins=20)
+            hist_norm = hist / len(diffs)
+            max_peak = np.max(hist_norm)
+
+            # 计算变异系数
+            cv = std_diff / (mean_diff + 1e-10)
+
+            # 置信度计算
+            # 随机图像：低sign_consistency，低max_peak，高cv
+            # 水印图像：高sign_consistency，高max_peak，低cv
+            confidence = min(1.0, sign_consistency * 0.4 + max_peak * 0.4 + (1 - min(cv, 1)) * 0.2)
+
+            # 对随机图像降低置信度
+            if sign_consistency < 0.1 and max_peak < 0.15:
+                confidence = min(confidence, 0.2)
+
+            return round(confidence, 3)
+        except:
+            return 0
+
+    def _detect_dwt_svd_pattern(self, y: np.ndarray) -> float:
+        """检测DWT-SVD水印特征"""
+        h, w = y.shape
+        if h < 32 or w < 32:
+            return 0
+
+        try:
+            # 小波分解
+            coeffs = pywt.wavedec2(y, 'haar', level=2)
+            LL = coeffs[0]
+
+            # 检测LL系数的差分模式
+            flat = LL.flatten()
+            if len(flat) < 100:
+                return 0
+
+            # 检测相邻系数的差分
+            diffs = []
+            signs = []
+            for i in range(0, len(flat) - 1, 2):
+                diff = flat[i] - flat[i + 1]
+                diffs.append(abs(diff))
+                signs.append(1 if diff > 0 else 0)
+
+            diffs = np.array(diffs)
+            signs = np.array(signs)
+
+            # 分析符号一致性
+            sign_ratio = np.mean(signs)
+            sign_consistency = abs(sign_ratio - 0.5) * 2
+
+            # 分析差分分布
+            mean_diff = np.mean(diffs)
+            std_diff = np.std(diffs)
+            cv = std_diff / (mean_diff + 1e-10)
+
+            hist, _ = np.histogram(diffs, bins=20)
+            hist_norm = hist / len(diffs)
+            max_peak = np.max(hist_norm)
+
+            # 置信度计算
+            confidence = min(1.0, sign_consistency * 0.5 + max_peak * 0.3 + (1 - min(cv, 1)) * 0.2)
+
+            # 随机图像降低置信度
+            if sign_consistency < 0.1 and max_peak < 0.15:
+                confidence = min(confidence, 0.2)
+
+            return round(confidence, 3)
+        except:
+            return 0
+
+    def _detect_qim_pattern(self, y: np.ndarray) -> float:
+        """检测QIM水印特征 - 量化索引调制"""
+        h, w = y.shape
+        if h < 32 or w < 32:
+            return 0
+
+        try:
+            # 小波分解
+            coeffs = pywt.wavedec2(y, 'haar', level=2)
+            LH = coeffs[2][1]
+
+            flat = LH.flatten()
+            if len(flat) < 100:
+                return 0
+
+            # QIM特征：检测量化残留
+            # 水印图像的系数在量化步长附近会有聚集
+            quantization_steps = [15, 20, 30, 40, 50, 60]
+
+            max_confidence = 0
+            for step in quantization_steps:
+                # 计算量化残留
+                residuals = flat % step
+                residual_hist, _ = np.histogram(residuals, bins=step)
+
+                # 检测残留是否集中在特定值（水印特征）
+                max_count = np.max(residual_hist)
+                concentration = max_count / len(flat)
+
+                confidence = concentration * 2
+                max_confidence = max(max_confidence, confidence)
+
+            return round(min(1.0, max_confidence), 3)
+        except:
+            return 0
+
+    def _detect_ss_pattern(self, y: np.ndarray) -> float:
+        """检测扩频水印特征"""
+        h, w = y.shape
+        if h < 16 or w < 16:
+            return 0
+
+        try:
+            # DCT变换
+            dct_y = dct(dct(y.T, norm='ortho').T, norm='ortho')
+
+            # 分析中频区域
+            start_h, end_h = h // 4, h // 2
+            start_w, end_w = w // 4, w // 2
+
+            mid_freq = dct_y[start_h:end_h, start_w:end_w]
+            flat = mid_freq.flatten()
+
+            if len(flat) < 100:
+                return 0
+
+            # 扩频水印特征：检测扩频序列的自相关性
+            # 通过分析相邻系数对的分布
+
+            # 计算相邻系数差的统计特性
+            pairs = []
+            for i in range(0, len(flat) - 1, 2):
+                pairs.append((flat[i], flat[i + 1]))
+
+            # 计算配对系数的相关性
+            if len(pairs) < 10:
+                return 0
+
+            pairs = np.array(pairs)
+            corr = np.corrcoef(pairs[:, 0], pairs[:, 1])[0, 1]
+
+            # 水印图像通常呈现负相关（嵌入策略）
+            confidence = min(1.0, abs(corr) * 2)
+
+            return round(confidence, 3)
+        except:
+            return 0
 
     def _text_to_bits(self, text: str) -> str:
         """文本转二进制，添加长度头"""
@@ -97,7 +471,17 @@ class ImageWatermarkService:
             return {"success": False, "message": "无法解析图像"}
 
         bits = ''.join(str(p & 1) for p in img.flatten())
-        return self._bits_to_text(bits)
+        result = self._bits_to_text(bits)
+
+        # 添加盲检测结果
+        detection = self._detect_watermark_presence(img, 'LSB')
+        result['detection'] = detection
+        result['confidence'] = detection['confidence']
+
+        if not result.get('success'):
+            result['message'] = f"{result.get('message', '')} (盲检测置信度: {detection['confidence']:.1%})"
+
+        return result
 
     # ==================== DCT ====================
     def _embed_dct(self, img_bytes: bytes, text: str, strength: float = 50) -> Tuple[bytes, str]:
@@ -197,9 +581,23 @@ class ImageWatermarkService:
 
             result = self._bits_to_text(bits)
             if result.get('success'):
+                # 添加盲检测结果
+                detection = self._detect_watermark_presence(img, 'DCT')
+                result['detection'] = detection
+                result['confidence'] = detection['confidence']
                 return result
 
-        return self._bits_to_text(bits)
+        result = self._bits_to_text(bits)
+
+        # 添加盲检测结果
+        detection = self._detect_watermark_presence(img, 'DCT')
+        result['detection'] = detection
+        result['confidence'] = detection['confidence']
+
+        if not result.get('success'):
+            result['message'] = f"{result.get('message', '')} (盲检测置信度: {detection['confidence']:.1%})"
+
+        return result
 
     # ==================== DWT ====================
     def _embed_dwt(self, img_bytes: bytes, text: str, strength: float = 80) -> Tuple[bytes, str]:
@@ -287,15 +685,29 @@ class ImageWatermarkService:
 
             result = self._bits_to_text(bits)
             if result.get('success'):
+                # 添加盲检测结果
+                detection = self._detect_watermark_presence(img, 'DWT')
+                result['detection'] = detection
+                result['confidence'] = detection['confidence']
                 return result
 
-        return self._bits_to_text(bits)
+        result = self._bits_to_text(bits)
+
+        # 添加盲检测结果
+        detection = self._detect_watermark_presence(img, 'DWT')
+        result['detection'] = detection
+        result['confidence'] = detection['confidence']
+
+        if not result.get('success'):
+            result['message'] = f"{result.get('message', '')} (盲检测置信度: {detection['confidence']:.1%})"
+
+        return result
 
     # ==================== DWT-SVD 混合算法 ====================
     def _embed_dwt_svd(self, img_bytes: bytes, text: str, strength: float = 0.03) -> Tuple[bytes, str]:
         """
-        DWT-SVD混合水印 - 极强鲁棒性算法
-        在小波低频子带使用差分嵌入
+        DWT-SVD混合水印 - 增强鲁棒性的差分嵌入
+        使用小波低频分量 + 大冗余度差分嵌入
         """
         nparr = np.frombuffer(img_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -309,14 +721,18 @@ class ImageWatermarkService:
         yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV).astype(np.float64)
         y = yuv[:, :, 0]
 
-        # Haar小波分解 level=3，使用最低频
-        coeffs = pywt.wavedec2(y, 'haar', level=3)
-        LL3 = coeffs[0].copy()
-        flat = LL3.flatten()
+        h, w = y.shape
 
-        # 固定冗余度
-        redundancy = 8
-        delta = 30  # 差值强度
+        # 使用2级小波分解，LL2足够大
+        coeffs = pywt.wavedec2(y, 'haar', level=2)
+        LL2 = coeffs[0].copy()
+
+        # 直接在LL2系数上嵌入，使用大冗余度
+        flat = LL2.flatten()
+
+        # 增加冗余度，每个bit嵌入到多个位置
+        redundancy = 32  # 更大的冗余度
+        delta = max(50, strength * 2000)  # 更大的差值
 
         for i, bit in enumerate(bits):
             for j in range(redundancy):
@@ -335,10 +751,10 @@ class ImageWatermarkService:
                     flat[idx + 1] = avg + delta
 
         # 重建
-        new_LL3 = flat.reshape(LL3.shape)
-        new_coeffs = [new_LL3, coeffs[1], coeffs[2], coeffs[3]]
+        new_LL2 = flat.reshape(LL2.shape)
+        new_coeffs = [new_LL2, coeffs[1], coeffs[2]]
         y_new = pywt.waverec2(new_coeffs, 'haar')
-        y_new = y_new[:img.shape[0], :img.shape[1]]
+        y_new = y_new[:h, :w]
 
         yuv[:, :, 0] = np.clip(y_new, 0, 255).astype(np.uint8)
         result = cv2.cvtColor(yuv.astype(np.uint8), cv2.COLOR_YUV2BGR)
@@ -346,7 +762,7 @@ class ImageWatermarkService:
         _, enc = cv2.imencode('.png', result)
         return enc.tobytes(), wm_hash
 
-    def _extract_dwt_svd(self, img_bytes: bytes) -> Dict:
+    def _extract_dwt_svd(self, img_bytes: bytes, strength: float = 0.03) -> Dict:
         """DWT-SVD混合水印提取"""
         nparr = np.frombuffer(img_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -356,14 +772,16 @@ class ImageWatermarkService:
         yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV).astype(np.float64)
         y = yuv[:, :, 0]
 
-        # 小波分解
-        coeffs = pywt.wavedec2(y, 'haar', level=3)
-        LL3 = coeffs[0]
-        flat = LL3.flatten()
+        h, w = y.shape
 
-        redundancy = 8
-        bits = ''
+        # 小波分解
+        coeffs = pywt.wavedec2(y, 'haar', level=2)
+        LL2 = coeffs[0]
+        flat = LL2.flatten()
+
+        redundancy = 32
         max_bits = len(flat) // (redundancy * 2)
+        bits = ''
 
         for i in range(max_bits):
             votes = 0
@@ -379,9 +797,23 @@ class ImageWatermarkService:
 
             result = self._bits_to_text(bits)
             if result.get('success'):
+                # 添加盲检测结果
+                detection = self._detect_watermark_presence(img, 'DWT-SVD')
+                result['detection'] = detection
+                result['confidence'] = detection['confidence']
                 return result
 
-        return self._bits_to_text(bits)
+        result = self._bits_to_text(bits)
+
+        # 添加盲检测结果
+        detection = self._detect_watermark_presence(img, 'DWT-SVD')
+        result['detection'] = detection
+        result['confidence'] = detection['confidence']
+
+        if not result.get('success'):
+            result['message'] = f"{result.get('message', '')} (盲检测置信度: {detection['confidence']:.1%})"
+
+        return result
 
     # ==================== QIM 量化索引调制 ====================
     def _embed_qim(self, img_bytes: bytes, text: str, strength: float = 30) -> Tuple[bytes, str]:
@@ -471,9 +903,23 @@ class ImageWatermarkService:
 
             result = self._bits_to_text(bits)
             if result.get('success'):
+                # 添加盲检测结果
+                detection = self._detect_watermark_presence(img, 'QIM')
+                result['detection'] = detection
+                result['confidence'] = detection['confidence']
                 return result
 
-        return self._bits_to_text(bits)
+        result = self._bits_to_text(bits)
+
+        # 添加盲检测结果
+        detection = self._detect_watermark_presence(img, 'QIM')
+        result['detection'] = detection
+        result['confidence'] = detection['confidence']
+
+        if not result.get('success'):
+            result['message'] = f"{result.get('message', '')} (盲检测置信度: {detection['confidence']:.1%})"
+
+        return result
 
     # ==================== SS 扩频水印 ====================
     def _embed_ss(self, img_bytes: bytes, text: str, strength: float = 15) -> Tuple[bytes, str]:
@@ -573,9 +1019,23 @@ class ImageWatermarkService:
 
             result = self._bits_to_text(bits)
             if result.get('success'):
+                # 添加盲检测结果
+                detection = self._detect_watermark_presence(img, 'SS')
+                result['detection'] = detection
+                result['confidence'] = detection['confidence']
                 return result
 
-        return self._bits_to_text(bits)
+        result = self._bits_to_text(bits)
+
+        # 添加盲检测结果
+        detection = self._detect_watermark_presence(img, 'SS')
+        result['detection'] = detection
+        result['confidence'] = detection['confidence']
+
+        if not result.get('success'):
+            result['message'] = f"{result.get('message', '')} (盲检测置信度: {detection['confidence']:.1%})"
+
+        return result
 
     # ==================== 统一接口 ====================
     def embed_watermark(self, img_bytes: bytes, text: str, algo: str = 'LSB', strength: float = None) -> Tuple[bytes, str]:
@@ -600,7 +1060,7 @@ class ImageWatermarkService:
         raise ValueError(f"不支持算法: {algo}")
 
     def extract_watermark(self, img_bytes: bytes, algo: str = 'LSB', strength: float = None) -> Dict:
-        """提取水印，强度参数用于QIM等需要量化步长的算法"""
+        """提取水印，强度参数用于QIM、DWT-SVD等需要量化步长的算法"""
         algo = algo.upper()
         if strength is None:
             strength = self.DEFAULT_STRENGTH.get(algo, 50)
@@ -612,7 +1072,7 @@ class ImageWatermarkService:
         elif algo == 'DWT':
             return self._extract_dwt(img_bytes)
         elif algo == 'DWT-SVD':
-            return self._extract_dwt_svd(img_bytes)
+            return self._extract_dwt_svd(img_bytes, strength)
         elif algo == 'QIM':
             return self._extract_qim(img_bytes, strength)
         elif algo == 'SS':

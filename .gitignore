@@ -60,3 +60,15 @@ logs/
 # Temp files
 *.tmp
 *.temp
+
+# Database
+*.db
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Generated files
+*.pptx
+gen_*.js
+PPT*.md

@@ -1,72 +1,183 @@
 # Digital Watermark Platform
 
-A cross-platform digital watermark system supporting multiple advanced algorithms for text and image watermarking.
+[English](README.md) | [中文](README_CN.md)
 
-[English](#english) | [中文](#chinese)
+A professional cross-platform digital watermark system with 6 advanced algorithms for image watermarking and zero-width character technology for text watermarking.
 
----
+## Features
 
-<a name="chinese"></a>
-## 中文文档
+### Image Watermarking (6 Advanced Algorithms)
 
-### 功能特性
+| Algorithm | Full Name | Robustness | Best For |
+|-----------|-----------|------------|----------|
+| **LSB** | Least Significant Bit | ★☆☆☆☆ | Lossless transmission, quick verification |
+| **DCT** | Discrete Cosine Transform | ★★★☆☆ | JPEG images, web transmission |
+| **DWT** | Discrete Wavelet Transform | ★★★★☆ | High-quality images, professional use |
+| **DWT-SVD** | Wavelet + SVD Hybrid | ★★★★★ | High-security needs, copyright protection |
+| **QIM** | Quantization Index Modulation | ★★★★☆ | Anti-attack requirements, academic research |
+| **SS** | Spread Spectrum | ★★★★★ | Military/commercial high-security scenarios |
 
-#### 文本水印
-使用**零宽字符**技术，在不改变文本显示效果的前提下嵌入水印信息。
+### Algorithm Verification Results
 
-| 功能 | 说明 |
-|------|------|
-| 嵌入水印 | 在文本末尾嵌入隐藏水印 |
-| 提取水印 | 从含水印文本中提取隐藏信息 |
-| 移除水印 | 清除文本中的零宽字符水印 |
-
-#### 图像水印（6种先进算法）
-
-| 算法 | 全称 | 特点 | 鲁棒性 | 适用场景 |
-|------|------|------|--------|----------|
-| **LSB** | 最低有效位替换 | 容量大，脆弱 | ★☆☆☆☆ | 无损传输、版权标记 |
-| **DCT** | 离散余弦变换 | 抗JPEG压缩 | ★★★☆☆ | JPEG图像、网络传输 |
-| **DWT** | 离散小波变换 | 综合鲁棒性 | ★★★★☆ | 高质量图像、专业应用 |
-| **DWT-SVD** | 小波+SVD混合 | 极强鲁棒性 | ★★★★★ | 高安全需求、版权保护 |
-| **QIM** | 量化索引调制 | 最先进方法 | ★★★★☆ | 抗攻击需求、学术研究 |
-| **SS** | 扩频水印 | 高安全性 | ★★★★★ | 军事/商业高安全场景 |
-
-**算法验证结果：**
-
-| 攻击类型 | LSB | DCT | DWT | DWT-SVD | QIM | SS |
-|---------|-----|-----|-----|---------|-----|-----|
+| Attack Type | LSB | DCT | DWT | DWT-SVD | QIM | SS |
+|-------------|-----|-----|-----|---------|-----|-----|
 | JPEG Q90 | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | JPEG Q50 | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 噪声 N20 | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 裁剪 90% | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ |
+| Noise N20 | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Crop 90% | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ |
 
-#### 可调节嵌入强度
+### Text Watermarking
 
-不同算法支持自定义嵌入强度，平衡图像质量与鲁棒性：
+Uses **Zero-Width Characters** to embed invisible watermarks without changing text display.
 
-| 算法 | 强度范围 | 默认值 | 说明 |
-|------|---------|--------|------|
-| DCT | 20-100 | 50 | 系数差值强度 |
-| DWT | 40-150 | 80 | 系数差值强度 |
-| DWT-SVD | 0.01-0.1 | 0.03 | 修改比例 |
-| QIM | 15-60 | 30 | 量化步长 |
-| SS | 5-30 | 15 | 扩频强度 |
+- Embed watermark into text
+- Extract watermark from text
+- Remove watermark from text
+- No visual change to the original text
 
-#### 图片追踪溯源
+### Adjustable Embedding Strength
 
-基于 SQLite 数据库的图片记录系统：
+Balance between image quality and robustness with configurable strength parameters.
 
-- **嵌入记录**：自动记录原始图片哈希、水印内容、算法、强度
-- **重复检测**：检测图片是否已被处理，显示历史记录
-- **统计信息**：支持查看操作统计、算法使用分布
+| Algorithm | Range | Default | Description |
+|-----------|-------|---------|-------------|
+| DCT | 20-100 | 50 | Coefficient difference |
+| DWT | 40-150 | 80 | Coefficient difference |
+| DWT-SVD | 0.01-0.1 | 0.03 | Modification ratio |
+| QIM | 15-60 | 30 | Quantization step |
+| SS | 5-30 | 15 | Spread spectrum strength |
 
----
+### Blind Watermark Detection
 
-### 项目结构
+When extraction fails, the system performs blind watermark detection and provides:
+
+- **Confidence Score**: Probability of watermark presence (0-100%)
+- **Best Match Algorithm**: Suggested algorithm with highest detection confidence
+- **Cross-Algorithm Detection**: Analyzes watermark features across all algorithms
+
+### Image Tracking System
+
+SQLite-based image record system for provenance tracking:
+
+- Automatic hash recording for each image
+- Duplicate detection with history display
+- Operation statistics and algorithm distribution
+- Watermark history tracking
+
+## Quick Start
+
+### Server Setup
+
+```bash
+cd server
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+# Linux/macOS
+source venv/bin/activate
+
+pip install -r requirements.txt
+python run.py
+```
+
+Server runs at `http://0.0.0.0:8000`
+
+### Client Setup
+
+```bash
+cd client
+flutter pub get
+
+# Build for Android
+flutter build apk --release
+
+# Build for iOS
+flutter build ios --release
+
+# Build for Web
+flutter build web --release
+```
+
+## API Reference
+
+### Text Watermark
+
+```bash
+# Embed watermark
+POST /api/text/embed
+Body: {"text": "original text", "watermark": "watermark content"}
+Response: {"watermarked_text": "text with watermark"}
+
+# Extract watermark
+POST /api/text/extract
+Body: {"text": "text with watermark"}
+Response: {"watermark": "extracted watermark"}
+
+# Remove watermark
+POST /api/text/remove
+Body: {"text": "text with watermark"}
+Response: {"cleaned_text": "clean text"}
+```
+
+### Image Watermark
+
+```bash
+# Embed watermark
+POST /api/image/embed
+FormData:
+  - image: image file
+  - watermark: watermark text
+  - algorithm: LSB | DCT | DWT | DWT-SVD | QIM | SS
+  - strength: (optional) embedding strength
+
+Response Headers:
+  - x-image-hash: original image hash
+  - x-image-known: whether image was seen before
+  - x-previous-info: previous processing info (JSON)
+  - x-watermark-algorithm: algorithm used
+  - x-watermark-strength: embedding strength
+
+# Extract watermark
+POST /api/image/extract
+FormData:
+  - image: image file
+  - algorithm: watermark algorithm
+  - strength: (required for QIM and DWT-SVD) embedding strength
+
+Response:
+{
+  "success": true,
+  "watermark": "extracted watermark",
+  "message": "extraction message",
+  "confidence": 0.85,
+  "detection": {
+    "confidence": 0.85,
+    "best_match": "DWT-SVD",
+    "best_confidence": 0.92,
+    "has_watermark": true
+  },
+  "image_hash": "abc123",
+  "is_watermarked": true,
+  "record_info": {
+    "watermark": "stored watermark",
+    "algorithm": "DWT-SVD",
+    "created": "2024-01-01 12:00:00"
+  }
+}
+
+# Get supported algorithms
+GET /api/image/algorithms
+
+# Get statistics
+GET /api/image/statistics
+```
+
+## Project Structure
 
 ```
 project/
-├── client/                  # Flutter 客户端 (支持 Android/iOS/Web)
+├── client/                  # Flutter client (Android/iOS/Web)
 │   ├── lib/
 │   │   ├── main.dart
 │   │   ├── screens/
@@ -78,148 +189,65 @@ project/
 │   │   └── utils/
 │   └── pubspec.yaml
 │
-└── server/                  # Python 服务端
-    ├── app/
-    │   ├── main.py
-    │   ├── routers/
-    │   │   ├── text_watermark.py
-    │   │   └── image_watermark.py
-    │   └── services/
-    │       ├── text_wm.py
-    │       ├── image_wm.py
-    │       └── image_record.py
-    ├── watermark.db          # SQLite 数据库
-    ├── requirements.txt
-    └── run.py
+├── server/                  # Python server
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── routers/
+│   │   │   ├── text_watermark.py
+│   │   │   └── image_watermark.py
+│   │   └── services/
+│   │       ├── text_wm.py
+│   │       ├── image_wm.py
+│   │       └── image_record.py
+│   ├── watermark.db          # SQLite database
+│   ├── requirements.txt
+│   └── run.py
+│
+└── Watermark/               # Reference implementation
+    ├── script/
+    │   ├── blind_watermark.py
+    │   └── watermark_invisiable.py
+    └── test.py
 ```
 
----
+## Technical Details
 
-### API 接口
+### DWT-SVD Hybrid Algorithm (Recommended)
 
-#### 文本水印
+1. Perform Haar wavelet 2-level decomposition
+2. Embed watermark in low-frequency LL2 subband
+3. Use coefficient pair relationships to represent watermark bits
+4. High redundancy (32x) ensures stability
+5. Resistant to JPEG compression, noise, and cropping
 
-```bash
-# 嵌入水印
-POST /api/text/embed
-Body: {"text": "原文", "watermark": "水印内容"}
-Response: {"watermarked_text": "含水印文本"}
+### QIM (Quantization Index Modulation)
 
-# 提取水印
-POST /api/text/extract
-Body: {"text": "含水印文本"}
-Response: {"watermark": "提取的水印"}
+1. Perform Haar wavelet 2-level decomposition
+2. Embed in mid-frequency LH2 subband
+3. Adjust adjacent coefficient relationships based on watermark bits
+4. Theoretically optimal robustness-capacity trade-off
 
-# 移除水印
-POST /api/text/remove
-Body: {"text": "含水印文本"}
-Response: {"cleaned_text": "清洁文本"}
-```
+### SS (Spread Spectrum)
 
-#### 图像水印
+1. Apply DCT transform to the image
+2. Embed in mid-frequency region (1/4 to 1/2 of spectrum)
+3. Similar to communication spread spectrum technology
+4. High security, difficult to detect and remove
 
-```bash
-# 嵌入水印
-POST /api/image/embed
-FormData: image, watermark, algorithm, strength(可选)
-Response Headers:
-  - x-image-hash: 原图哈希
-  - x-watermark-algorithm: 使用的算法
-  - x-watermark-strength: 嵌入强度
+### Blind Detection Algorithm
 
-# 提取水印
-POST /api/image/extract
-FormData: image, algorithm, strength(QIM算法需要)
-Response: {
-  "success": true,
-  "watermark": "提取的水印",
-  "image_hash": "图片哈希",
-  "is_watermarked": true,
-  "record_info": {...}
-}
+The system analyzes multiple statistical features:
 
-# 获取算法列表
-GET /api/image/algorithms
-Response: {
-  "algorithms": ["LSB", "DCT", "DWT", "DWT-SVD", "QIM", "SS"],
-  "strength_ranges": {...},
-  "default_strength": {...}
-}
+- **LSB**: Entropy analysis and UTF-8 validity check
+- **DCT**: Mid-frequency coefficient pattern analysis
+- **DWT**: Wavelet coefficient sign consistency
+- **DWT-SVD**: Low-frequency coefficient difference pattern
+- **QIM**: Quantization residue analysis
+- **SS**: Coefficient pair correlation analysis
 
-# 获取统计信息
-GET /api/image/statistics
-Response: {
-  "original_images": 100,
-  "watermarked_images": 150,
-  "total_operations": 150,
-  "algorithm_stats": {"DCT": 50, "DWT-SVD": 80, ...}
-}
-```
+## Dependencies
 
----
-
-### 部署指南
-
-#### 服务端
-
-```bash
-cd server
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-# Linux/Mac
-source venv/bin/activate
-
-pip install -r requirements.txt
-python run.py
-```
-
-服务运行在 `http://0.0.0.0:8000`
-
-#### 客户端
-
-```bash
-cd client
-flutter pub get
-
-# Android
-flutter build apk --release
-
-# iOS
-flutter build ios --release
-
-# Web
-flutter build web --release
-```
-
----
-
-### 技术实现
-
-#### 图像水印算法原理
-
-**DWT-SVD 混合算法（推荐）：**
-1. 对图像进行 Haar 小波 3 级分解
-2. 在低频 LL3 子带进行差分嵌入
-3. 使用系数对的大小关系表示水印位
-4. 高冗余度（8x）确保稳定性
-
-**QIM 量化索引调制：**
-1. 对图像进行 Haar 小波 2 级分解
-2. 在中频 LH2 子带进行差分嵌入
-3. 根据水印位调整相邻系数关系
-
-**SS 扩频水印：**
-1. 对图像进行 DCT 变换
-2. 在中频区域进行差分嵌入
-3. 类似通信扩频技术，安全性高
-
----
-
-### 依赖说明
-
-**Python 服务端：**
+**Python Server:**
 ```
 fastapi>=0.110.0
 uvicorn>=0.27.0
@@ -230,7 +258,7 @@ scipy>=1.12.0
 python-multipart>=0.0.9
 ```
 
-**Flutter 客户端：**
+**Flutter Client:**
 ```yaml
 http: ^1.2.0
 file_picker: ^8.0.0
@@ -241,16 +269,23 @@ gal: ^2.3.0
 shared_preferences: ^2.2.2
 ```
 
----
+## Security Notes
 
-### 安全说明
+1. **Text Watermark**: Zero-width characters may be filtered in some systems, suitable for low-security scenarios
 
-1. **文本水印**：零宽字符可能在某些系统中被过滤，适合低安全场景
-2. **图像水印**：
-   - LSB 易受压缩攻击，仅适合即时验证
-   - DCT/DWT/QIM/SS 抗压缩，适合保存传播
-   - DWT-SVD 鲁棒性最强，推荐用于版权保护
-3. **通信安全**：建议生产环境使用 HTTPS
+2. **Image Watermark**:
+   - LSB is fragile to compression, suitable for quick verification only
+   - DCT/DWT/QIM/SS resist compression, suitable for distribution
+   - DWT-SVD has the strongest robustness, recommended for copyright protection
 
----
+3. **Communication**: Use HTTPS in production environments
 
+## License
+
+MIT License
+
+## Version
+
+- Client: 1.2.0
+- Server: 1.2.0
+- Supported SDK: Flutter 3.11.3+, Python 3.10+
