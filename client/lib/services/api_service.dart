@@ -132,6 +132,7 @@ class ApiService {
     String watermark,
     String filename, {
     String algorithm = 'LSB',
+    double? strength,
   }) async {
     try {
       final request = http.MultipartRequest(
@@ -148,6 +149,9 @@ class ApiService {
       );
       request.fields['watermark'] = watermark;
       request.fields['algorithm'] = algorithm;
+      if (strength != null) {
+        request.fields['strength'] = strength.toString();
+      }
 
       final streamedResponse = await request.send().timeout(const Duration(seconds: 60));
       final response = await http.Response.fromStream(streamedResponse).timeout(const Duration(seconds: 60));
@@ -174,6 +178,7 @@ class ApiService {
     String watermark,
     String filename, {
     String algorithm = 'LSB',
+    double? strength,
   }) async {
     try {
       final request = http.MultipartRequest(
@@ -190,6 +195,9 @@ class ApiService {
       );
       request.fields['watermark'] = watermark;
       request.fields['algorithm'] = algorithm;
+      if (strength != null) {
+        request.fields['strength'] = strength.toString();
+      }
 
       final streamedResponse = await request.send().timeout(const Duration(seconds: 60));
       final response = await http.Response.fromStream(streamedResponse).timeout(const Duration(seconds: 60));
@@ -210,6 +218,7 @@ class ApiService {
           'isKnown': headers['x-image-known'] == 'true',
           'watermarkHash': headers['x-watermark-hash'],
           'algorithm': headers['x-watermark-algorithm'],
+          'strength': headers['x-watermark-strength'],
           'previousInfo': previousInfo,
         };
       } else {
@@ -231,6 +240,7 @@ class ApiService {
     Uint8List imageBytes,
     String filename, {
     String algorithm = 'LSB',
+    double? strength,
   }) async {
     try {
       final request = http.MultipartRequest(
@@ -246,6 +256,9 @@ class ApiService {
         ),
       );
       request.fields['algorithm'] = algorithm;
+      if (strength != null) {
+        request.fields['strength'] = strength.toString();
+      }
 
       final streamedResponse = await request.send().timeout(const Duration(seconds: 60));
       final response = await http.Response.fromStream(streamedResponse).timeout(const Duration(seconds: 60));
